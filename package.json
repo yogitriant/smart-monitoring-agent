@@ -1,0 +1,59 @@
+{
+  "name": "smart-monitoring-agent",
+  "version": "1.0.4",
+  "type": "commonjs",
+  "main": "index.js",
+  "bin": "index.js",
+  "scripts": {
+    "build": "node scripts/build-zip.js",
+    "prepare-installer": "node scripts/build-installer-prep.js",
+    "build-register-task": "pkg scripts/register-task.js --targets node18-win-x64 --output dist/register-task.exe",
+    "build-exe": "pkg . --targets node18-win-x64 --output dist/smart-monitoring-agent.exe",
+    "build-all": "npm run build-exe && npm run build-installer",
+    "build-watchbee": "pkg scripts/watchbee.js --targets node18-win-x64 --output dist/watchbee.exe"
+  },
+  "pkg": {
+    "assets": [
+      "config.json",
+      ".env",
+      "data/**/*",
+      "logs/**/*",
+      "scheduler.js",
+      "scripts/getIdleTime.ps1",
+      "services/**/*",
+      "utils/**/*",
+      "node_modules/axios/dist/node/axios.cjs"
+    ],
+    "scripts": [
+      "node_modules/axios/dist/node/axios.cjs",
+      "node_modules/node-fetch/**/*",
+      "node_modules/dotenv/**/*",
+      "scripts/watchdog.js"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "options": [
+      "winHide"
+    ],
+    "icon": "assets/bee-binus-icon.ico",
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "axios": "^1.10.0",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.5.0",
+    "edge-js": "^22.9.0",
+    "node-fetch": "^2.7.0",
+    "node-windows": "^1.0.0-beta.8",
+    "ps-node": "^0.1.6",
+    "socket.io-client": "^4.8.1",
+    "systeminformation": "^5.27.1",
+    "unzipper": "^0.12.3"
+  },
+  "devDependencies": {
+    "fs-extra": "^11.3.0",
+    "pkg": "^5.8.1"
+  }
+}

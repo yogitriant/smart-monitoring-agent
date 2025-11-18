@@ -1,0 +1,57 @@
+# =========================
+# NODE / NPM
+# =========================
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# =========================
+# ENV / CONFIG SENSITIVE
+# =========================
+.env
+config.json
+agent.pid
+
+# =========================
+# APP GENERATED FILES
+# =========================
+logs/
+backup/
+data/
+dist/
+folder sementara/
+scheduler.log
+
+# Jika ada folder temp internal
+temp/
+tmp/
+
+# =========================
+# WINDOWS / BUILD / INSTALLER
+# =========================
+*.exe
+*.dll
+*.iss.tpl
+SmartMonitoringInstallerOutput/
+InnoSetupOutput/
+
+# =========================
+# ZIP / ARTIFACTS UPDATE
+# =========================
+*.zip
+*.tar
+*.tar.gz
+
+# =========================
+# SYSTEM FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# TEST FILES (opsional)
+# =========================
+test_*.js
+restart.test.js
+scheduler.js
