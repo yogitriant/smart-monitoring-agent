@@ -1,5 +1,6 @@
 const os = require('os');
 const si = require('systeminformation');
+const { execSync } = require('child_process');
 
 export async function getHardwareInfo() {
   const system = await si.system();
@@ -24,12 +25,34 @@ export async function getHardwareInfo() {
     osInfo.release || ""
   }`.trim();
 
-  // Username fallback
+  // Username & Admin Detection via WMI / PowerShell
   let userLogin = "unknown";
+  let isAdmin = false;
+
   try {
-    userLogin = os.userInfo().username || "unknown";
-  } catch {
-    // bisa log error jika perlu
+    // Dapatkan username interaktif aktif
+    const stdoutUser = execSync('powershell -NoProfile -Command "(Get-WmiObject -Class Win32_ComputerSystem).UserName"', { stdio: 'pipe' }).toString().trim();
+    if (stdoutUser && stdoutUser.toLowerCase() !== "null" && stdoutUser !== "") {
+      userLogin = stdoutUser.split('\\').pop() || stdoutUser;
+      
+      // Cek keanggotaan grup Administrator lokal menggunakan net localgroup administrators
+      try {
+        const netCmd = `net localgroup administrators`;
+        const result = execSync(netCmd, { stdio: 'pipe', encoding: 'utf8' }).toLowerCase();
+        // userLogin mungkin berisi domain\username atau hanya username
+        isAdmin = result.includes(userLogin.toLowerCase());
+      } catch (e) {
+        isAdmin = /admin|it|support/i.test(userLogin.toLowerCase());
+      }
+    } else {
+      // Fallback
+      userLogin = os.userInfo().username || "unknown";
+      isAdmin = /admin|it|support/i.test(userLogin.toLowerCase());
+    }
+  } catch (e) {
+    // Fallback jika WMI / Powershell gagal
+    try { userLogin = os.userInfo().username || "unknown"; } catch (err) {}
+    isAdmin = /admin|it|support/i.test(userLogin.toLowerCase());
   }
 
   // Deteksi jenis perangkat
@@ -37,9 +60,6 @@ export async function getHardwareInfo() {
     (chassis.type || "").toLowerCase().includes("laptop") ||
     (system.model || "").toLowerCase().includes("laptop");
   const type = isLaptop ? "LT" : "DT";
-
-  // Deteksi admin sederhana
-  const isAdmin = /admin|it|support/i.test(userLogin.toLowerCase());
 
   return {
     serialNumber,

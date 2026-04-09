@@ -27,23 +27,28 @@ function startAutoShutdownService(socket, config) {
   log(`⌛ Idle timeout: ${idleTimeout}s`, "shutdown");
   log(`⚠️ Shutdown delay: ${shutdownDelay}s`, "shutdown");
 
+  let wasIdle = false;
+
   intervalId = setInterval(async () => {
     const idleTime = await getIdleTime(); // ✅ panggil langsung
-    log(`⌛ Idle time: ${idleTime} | Timeout: ${idleTimeout}`, "shutdown");
 
     if (idleTime >= idleTimeout && !shutdownIssued) {
-      log("⚠️ Terlalu lama idle! Kirim peringatan shutdown...", "shutdown");
+      if (!wasIdle) {
+        log(`⚠️ Idle ${idleTime}s >= ${idleTimeout}s, shutdown dalam ${shutdownDelay}s...`, "shutdown");
+        wasIdle = true;
+      }
       exec(`msg * Komputer akan dimatikan dalam ${shutdownDelay} detik karena tidak aktif`);
       exec(`shutdown /s /t ${shutdownDelay}`);
       shutdownIssued = true;
     }
 
     if (shutdownIssued && idleTime < 10) {
-      log("✅ Aktivitas terdeteksi ulang, shutdown dibatalkan.", "shutdown");
+      log("✅ Aktivitas terdeteksi, shutdown dibatalkan.", "shutdown");
       exec("shutdown /a", () => {
         log("🔄 Pending shutdown dibatalkan (aktivitas terdeteksi)", "shutdown");
       });
       shutdownIssued = false;
+      wasIdle = false;
     }
   }, 10_000);
 }

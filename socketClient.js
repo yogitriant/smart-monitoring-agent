@@ -28,76 +28,34 @@ async function connectSocket(pcId) {
       });
     };
 
+    // 🔹 Handle agent update — di-register SEKALI di luar "connect"
+    // agar tidak menumpuk setiap kali reconnect
+    socket.on("agent-update", async (data) => {
+      log(`📦 Received agent-update: ${JSON.stringify(data)}`, "socket");
+      try {
+        await handleAgentUpdate(data, socket);
+      } catch (err) {
+        console.error("❌ Update agent gagal:", err.message);
+        socket.emit("agent-update-result", {
+          pcId: data.pcId,
+          version: data.version,
+          status: "failed",
+          message: err.message,
+        });
+      }
+    });
+
+    // ⚠️ "agent-config-updated" ditangani di scheduler.js (satu tempat saja)
+    // Tidak perlu listener duplikat di sini.
+
     socket.on("connect", () => {
       log(`🔌 Socket connected: ${socket.id}`, "socket");
       socket.emit("join-room", pcId);
       emitOnlineStatus();
-
-      // 🔹 Handle agent update (file version, update exe, dll)
-      socket.on("agent-update", async (data) => {
-        log(`📦 Received agent-update: ${JSON.stringify(data)}`, "socket");
-        try {
-          await handleAgentUpdate(data, socket);
-        } catch (err) {
-          console.error("❌ Update agent gagal:", err.message);
-          socket.emit("agent-update-result", {
-            pcId: data.pcId,
-            version: data.version,
-            status: "failed",
-            message: err.message,
-          });
-        }
-      });
-
-      // 🔹 Handle config update (from backend broadcast)
-      socket.on("agent-config-updated", async () => {
-        log("🔁 Received agent-config-updated event", "socket");
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/settings/agent-config/${pcId}`);
-          const updatedConfig = await res.json();
-
-          const {
-            startUptimeService,
-            stopUptimeService,
-          } = require("./services/uptimeService");
-
-          const {
-            startAutoShutdownService,
-            stopAutoShutdownService,
-          } = require("./services/autoShutdownService");
-
-          const {
-            setPerformanceInterval,
-          } = require("./services/performanceService");
-
-          // Gabungkan config lama dan baru
-          const currentConfig = {
-            ...(await loadConfig()),
-            ...updatedConfig,
-          };
-
-          // 🔹 Update interval performance secara realtime (tanpa restart)
-          if (typeof updatedConfig.performanceInterval === "number") {
-            const perfMs = updatedConfig.performanceInterval * 1000;
-            setPerformanceInterval(socket, currentConfig, perfMs);
-            log(`⚙️ Performance interval diubah ke ${perfMs / 1000}s`, "socket");
-          }
-
-          // 🔹 Restart service lain yang butuh refresh penuh
-          stopUptimeService();
-          stopAutoShutdownService();
-
-          startUptimeService(socket, currentConfig, currentConfig.uptimeInterval);
-          startAutoShutdownService(socket, currentConfig);
-
-          log("✅ Agent config reloaded & applied successfully", "socket");
-        } catch (err) {
-          log("❌ Gagal reload config agent: " + err.message, "socket");
-        }
-      });
-
-      resolve(socket);
     });
+    
+    // Langsung resolve socket agar scheduler bisa berjalan di background walau sedang offline
+    resolve(socket);
 
     socket.on("reconnect", (attempt) => {
       log(`🔁 Socket reconnected after ${attempt} attempt(s)`, "socket");
@@ -110,10 +68,18 @@ async function connectSocket(pcId) {
 
     socket.on("connect_error", (err) => {
       log("❌ Gagal konek socket: " + err.message, "socket");
-      reject(err);
+      // Jangan reject — biarkan socket.io retry otomatis
+      // Hanya reject jika belum pernah connect setelah 30 detik
     });
+
+
   });
 }
 
+// ✅ Getter function — socket baru tersedia setelah connectSocket() dipanggil
+function getSocket() {
+  return socket;
+}
+
 module.exports = connectSocket;
-module.exports.socket = socket;
+module.exports.getSocket = getSocket;

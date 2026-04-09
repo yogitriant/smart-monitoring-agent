@@ -17,10 +17,13 @@ function formatTime(sec) {
 
 async function collectAndEmit(socket, config) {
   try {
-    const [cpu, mem, disks] = await Promise.all([
+    const [cpu, mem, disks, diskLayout, battery, netInterfaces] = await Promise.all([
       si.currentLoad(),
       si.mem(),
       si.fsSize(),
+      si.diskLayout(),
+      si.battery(),
+      si.networkInterfaces()
     ]);
 
     // 🔹 Baca idle time saja (tidak set ke sharedState)
@@ -39,11 +42,38 @@ async function collectAndEmit(socket, config) {
       total: +(d.size / 1024 / 1024 / 1024).toFixed(2),
     }));
 
+    // 🔋 Battery Calculation
+    let batteryInfo = null;
+    if (battery.hasBattery) {
+      const healthPercent = (battery.designedCapacity && battery.maxCapacity)
+        ? Math.round((battery.maxCapacity / battery.designedCapacity) * 100)
+        : null;
+      batteryInfo = {
+        percent: battery.percent,
+        isCharging: battery.isCharging,
+        health: healthPercent
+      };
+    }
+
+    // 💽 Disk Health (SMART)
+    const diskHealth = diskLayout.map(d => ({
+      name: d.name,
+      type: d.type,
+      smartStatus: d.smartStatus || "Unknown"
+    }));
+
+    // 🌐 Active IP Address
+    const activeNet = netInterfaces.find(n => n.operstate === "up" && !n.virtual && n.ip4);
+    const activeIp = activeNet ? activeNet.ip4 : "127.0.0.1";
+
     socket.emit("performance", {
       pc: config.pcId,
       cpuUsage,
       ramUsage,
       diskUsage,
+      diskHealth,
+      battery: batteryInfo,
+      activeIp,
       idleTime: idleRaw,
       uptime,
       agentUptime,
@@ -53,11 +83,7 @@ async function collectAndEmit(socket, config) {
     });
 
     log(
-      `📊 Performance | CPU: ${cpuUsage}%, RAM: ${ramUsage}%, Boot: ${formatTime(
-        uptime
-      )}, Agent: ${formatTime(agentUptime)}, Total: ${formatTime(
-        uptimeTotal
-      )}, IdleRaw: ${idleRaw}s, Session: ${formatTime(uptimeSession)}`,
+      `📊 Performa | CPU:${cpuUsage}% RAM:${ramUsage}% IP:${activeIp} Batt:${batteryInfo ? batteryInfo.percent + '%' : 'N/A'} Uptime:${formatTime(uptimeSession)}`,
       "performance"
     );
   } catch (err) {
@@ -68,7 +94,7 @@ async function collectAndEmit(socket, config) {
 function startPerformanceService(socket, config) {
   if (performanceInterval) clearInterval(performanceInterval);
 
-  const customInterval = (config.performanceInterval || 60) * 1000; // default 1 jam
+  const customInterval = (config.performanceInterval || 3600) * 1000; // default 1 jam
   intervalMs = customInterval;
 
   // 🔹 kirim 1x data awal langsung

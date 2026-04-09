@@ -1,27 +1,4 @@
 // utils/uptimeHelper.js
-// const fs = require("fs/promises");
-// const path = require("path");
-// const dayjs = require("dayjs");
-
-// const UPTIME_FILE = path.join(process.cwd(), "data", "uptime.json");
-
-// async function getUptimeTotalToday() {
-//   const today = dayjs().format("YYYY-MM-DD");
-
-//   try {
-//     const content = await fs.readFile(UPTIME_FILE, "utf-8");
-//     const data = JSON.parse(content);
-//     return data[today] || 0;
-//   } catch {
-//     return 0;
-//   }
-// }
-
-// module.exports = {
-//   getUptimeTotalToday,
-// };
-
-// utils/uptimeHelper.js
 const fetch = require("node-fetch");
 const { loadConfig } = require("./configHandler");
 const { API_BASE_URL } = require("./env");
@@ -48,4 +25,3 @@ async function getUptimeTotalToday() {
 module.exports = {
   getUptimeTotalToday,
 };
-

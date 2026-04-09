@@ -3,6 +3,7 @@ const path = require("path");
 const dayjs = require("dayjs");
 const { getDataPath } = require("../utils/pathHelper");
 const { log } = require("../utils/logger");
+const { runWithMutex } = require("../utils/fileMutex");
 
 const appDataPath = getDataPath();
 const UPTIME_FILE = path.join(appDataPath, "uptime.json");
@@ -42,11 +43,13 @@ async function emitUptime(socket, config, session, total) {
 async function emitAtStartup(socket, config) {
   const today = dayjs().format("YYYY-MM-DD");
   try {
-    const data = await readUptimeData();
-    const totalToday = data[today] || 0;
-    sessionUptime = 0;
-    lastSessionStart = Date.now();
-    await emitUptime(socket, config, sessionUptime, totalToday);
+    await runWithMutex(UPTIME_FILE, async () => {
+      const data = await readUptimeData();
+      const totalToday = data[today] || 0;
+      sessionUptime = 0;
+      lastSessionStart = Date.now();
+      await emitUptime(socket, config, sessionUptime, totalToday);
+    });
   } catch (err) {
     log("❌ Gagal emit uptime saat startup: " + err.message, "uptime");
   }
@@ -65,10 +68,12 @@ function startUptimeService(socket, config, interval = 60) {
 
     const today = dayjs().format("YYYY-MM-DD");
     try {
-      const data = await readUptimeData();
-      data[today] = (data[today] || 0) + duration;
-      await writeUptimeData(data);
-      await emitUptime(socket, config, sessionUptime, data[today]);
+      await runWithMutex(UPTIME_FILE, async () => {
+        const data = await readUptimeData();
+        data[today] = (data[today] || 0) + duration;
+        await writeUptimeData(data);
+        await emitUptime(socket, config, sessionUptime, data[today]);
+      });
     } catch (err) {
       log("❌ Gagal update uptime: " + err.message, "uptime");
     }

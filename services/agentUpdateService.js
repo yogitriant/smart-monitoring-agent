@@ -3,12 +3,13 @@ const fs = require("fs");
 const path = require("path");
 const fetch = require("node-fetch");
 const unzipper = require("unzipper");
+const crypto = require("crypto");
 const { API_BASE_URL } = require("../utils/env");
 const { loadConfig, saveConfig } = require("../utils/configHandler");
 const { log } = require("../utils/logger");
 
 async function handleAgentUpdate(data, socket) {
-  const { pcId, version, silent = true, force = false } = data;
+  const { pcId, version, hash, silent = true, force = false } = data;
   const zipUrl = `${API_BASE_URL}/agent_versions/${version}/agent.zip`;
   const config = await loadConfig();
   const currentVersion = config.version || "unknown";
@@ -17,6 +18,19 @@ async function handleAgentUpdate(data, socket) {
     log(`⚠️ Skip update: version ${version} is already current.`, "update");
     return;
   }
+
+  // 🔹 Jittering: Delay acak 1 - 60 detik untuk mencegah network spike
+  const delayMs = Math.floor(Math.random() * 60000) + 1000;
+  log(`⏳ Menunda download update versi ${version} selama ${Math.round(delayMs / 1000)} detik (Jitter)...`, "update");
+  
+  socket.emit("agent-update-result", {
+    pcId,
+    version,
+    status: "pending",
+    message: `Menunda antrean download ${Math.round(delayMs / 1000)} detik...`
+  });
+
+  await new Promise(resolve => setTimeout(resolve, delayMs));
 
   try {
     const agentDir = path.dirname(process.execPath);
@@ -51,6 +65,13 @@ async function handleAgentUpdate(data, socket) {
 
     // 🔹 Download ZIP
     log(`🌍 Fetching ZIP: ${zipUrl}`, "update");
+    socket.emit("agent-update-result", {
+      pcId,
+      version,
+      status: "downloading",
+      message: "Sedang mendownload dan memverifikasi update..."
+    });
+    
     const res = await fetch(zipUrl);
     if (!res.ok) throw new Error(`Gagal download zip: ${res.statusText}`);
 
@@ -60,6 +81,20 @@ async function handleAgentUpdate(data, socket) {
       res.body.on("error", reject);
       fileStream.on("finish", resolve);
     });
+
+    // 🔹 Pengecekan Hash (Integrity Check)
+    if (hash) {
+      log(`🔍 Memverifikasi integritas file (SHA256)...`, "update");
+      const fileBuffer = fs.readFileSync(tempZipPath);
+      const calculatedHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+      if (calculatedHash !== hash) {
+        fs.unlinkSync(tempZipPath);
+        throw new Error("Hash mismatch! File zip corrupt atau tidak valid.");
+      }
+      log(`✅ Verifikasi Hash sukses.`, "update");
+    } else {
+      log(`⚠️ Peringatan: Tidak ada hash pada payload, melewati verifikasi.`, "update");
+    }
 
     // 🔹 Ekstrak ke folder tmp_update
     if (fs.existsSync(tempExtractDir)) {

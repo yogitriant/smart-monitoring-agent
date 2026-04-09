@@ -6,6 +6,10 @@ const fs = require("fs");
 const os = require("os");
 
 let lastIdle = 0;
+let psProcess = null;
+let restartCount = 0;
+const MAX_RESTARTS = 10;
+const RESTART_DELAY_MS = 5000;
 
 // ✅ Tentukan lokasi script PowerShell
 const ps1Path = path.join(
@@ -14,8 +18,7 @@ const ps1Path = path.join(
   "getIdleTime.ps1"
 );
 
-// 🚑 Fallback: kalau script nggak ada (misalnya lupa copy waktu build),
-// tulis ulang script ke temp folder
+// 🚑 Fallback: kalau script nggak ada, tulis ulang ke temp folder
 let scriptPath = ps1Path;
 if (!fs.existsSync(ps1Path)) {
   const ps1Content = `
@@ -42,42 +45,68 @@ while ($true) {
         Write-Output 0
         [Console]::Out.Flush()
     }
-    Start-Sleep -Milliseconds 1000
+    Start-Sleep -Milliseconds 3000
 }`;
   scriptPath = path.join(os.tmpdir(), "getIdleTime.ps1");
   fs.writeFileSync(scriptPath, ps1Content, "utf-8");
   log(`⚠️ getIdleTime.ps1 tidak ditemukan, tulis ulang ke ${scriptPath}`, "idle");
 }
 
-// 🔹 spawn PowerShell sekali aja, baca output idle time terus-menerus
-const ps = spawn("powershell.exe", [
-  "-ExecutionPolicy",
-  "Bypass",
-  "-File",
-  scriptPath,
-]);
-
-ps.stdout.on("data", (data) => {
-  const raw = data.toString().trim();
-  log(`[IdleTime Raw]: ${raw}`, "performance"); // 🔍 DEBUG ke performance.log
-
-  const val = parseInt(raw, 10);
-  if (!isNaN(val)) {
-    lastIdle = val;
+// 🔹 Spawn PowerShell dengan auto-restart jika crash
+function spawnPowershell() {
+  if (psProcess) {
+    try { psProcess.kill(); } catch (_) {}
   }
-});
 
-ps.stderr.on("data", (data) => {
-  log(`[IdleTime Error]: ${data.toString()}`, "performance");
-});
+  psProcess = spawn("powershell.exe", [
+    "-ExecutionPolicy", "Bypass",
+    "-File", scriptPath,
+  ]);
 
-// ✅ fungsi yang bisa dipanggil kapan saja
+  psProcess.stdout.on("data", (data) => {
+    const lines = data.toString().trim().split(/\r?\n/);
+    for (const line of lines) {
+      const val = parseInt(line.trim(), 10);
+      if (!isNaN(val)) {
+        lastIdle = val;
+      }
+    }
+  });
+
+  psProcess.stderr.on("data", (data) => {
+    log(`[IdleTime Error]: ${data.toString().trim()}`, "performance");
+  });
+
+  psProcess.on("exit", (code) => {
+    log(`⚠️ PowerShell idle process exited with code ${code}`, "idle");
+    psProcess = null;
+
+    if (restartCount < MAX_RESTARTS) {
+      restartCount++;
+      log(`🔄 Auto-restart PowerShell idle (attempt ${restartCount}/${MAX_RESTARTS})`, "idle");
+      setTimeout(spawnPowershell, RESTART_DELAY_MS);
+    } else {
+      log(`❌ PowerShell idle max restarts (${MAX_RESTARTS}) reached, giving up`, "idle");
+    }
+  });
+
+  psProcess.on("error", (err) => {
+    log(`❌ PowerShell spawn error: ${err.message}`, "idle");
+  });
+
+  log("🟢 PowerShell idle process started", "idle");
+}
+
+// Start on module load
+spawnPowershell();
+
+// ✅ Fungsi yang bisa dipanggil kapan saja
 function getIdleTime() {
   return lastIdle;
 }
 
-// ✅ fungsi tambahan: idle status dengan threshold
-function getIdleStatus(threshold = 300) { // default 5 menit
+// ✅ Fungsi tambahan: idle status dengan threshold
+function getIdleStatus(threshold = 300) {
   if (lastIdle >= threshold) {
     return { status: "idle", idleFor: lastIdle - threshold };
   } else {
@@ -85,5 +114,4 @@ function getIdleStatus(threshold = 300) { // default 5 menit
   }
 }
 
-module.exports = { getIdleTime, getIdleStatus};
-
+module.exports = { getIdleTime, getIdleStatus };

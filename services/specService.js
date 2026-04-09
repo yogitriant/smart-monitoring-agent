@@ -125,6 +125,7 @@ function shallowEqual(a, b) {
 function isMeaningfullyDifferent(prev = {}, curr = {}) {
   // bandingkan field non-disk & tanpa bios
   const pick = (s) => ({
+    hostname: s.hostname ?? "-",
     brand: s.brand ?? "-",
     model: s.model ?? "-",
     cpu: s.cpu ?? "-",
@@ -147,11 +148,29 @@ function isMeaningfullyDifferent(prev = {}, curr = {}) {
   return false;
 }
 
+// ====================== VALIDATION ======================
+/** 
+ * Memastikan hasil query systeminformation valid, 
+ * tidak kosong akibat kegagalan WMI Windows
+ */
+function isValidSpec(s) {
+  if (!s) return false;
+  if (!s.cpu || s.cpu.trim() === "" || s.cpu.trim() === "-") return false;
+  if (!s.os || s.os.trim() === "x64" || s.os.trim() === "") return false;
+  if (!Array.isArray(s.disk) || s.disk.length === 0) return false;
+  return true;
+}
+
 // ====================== SERVICE ======================
 async function startSpecService(socket, config, force = false) {
   try {
     const spec = await collectSpec(); // sudah tanpa BIOS
     const lastSpec = await getStoredSpec();
+
+    if (!isValidSpec(spec)) {
+      log("⚠️ Spesifikasi tidak lengkap (kemungkinan kegagalan WMI), mengabaikan...", "spec");
+      return;
+    }
 
     const changed = force || isMeaningfullyDifferent(lastSpec, spec);
     if (changed) {
@@ -187,6 +206,7 @@ async function collectSpec() {
     {};
 
   return {
+    hostname: os.hostname || "-",
     brand: baseboard.manufacturer || "-",
     model: baseboard.model || "-",
     cpu: `${cpu.manufacturer} ${cpu.brand}`.trim(),

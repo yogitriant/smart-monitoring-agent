@@ -17,11 +17,12 @@ Source: "dist\config.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "scripts\getIdleTime.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Icons]
-Name: "{commonstartup}\Smart Monitoring Agent"; Filename: "wscript.exe"; Parameters: """{app}\run-silent.vbs"""
 Name: "{commonstartup}\Smart Monitoring Watchbee"; Filename: "wscript.exe"; Parameters: """{app}\run-watchbee.vbs"""
 
+[Dirs]
+Name: "{app}"; Permissions: users-modify
+
 [Run]
-Filename: "wscript.exe"; Parameters: """{app}\run-silent.vbs"""; Flags: nowait postinstall skipifsilent
 Filename: "wscript.exe"; Parameters: """{app}\run-watchbee.vbs"""; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

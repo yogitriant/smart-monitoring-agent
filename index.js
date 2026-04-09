@@ -35,12 +35,8 @@ const main = async () => {
   }
 
   let socket;
-  try {
-    socket = await connectSocket(config.pcId);
-  } catch (err) {
-    log("❌ Gagal konek ke socket server: " + err.message);
-    return;
-  }
+  // Mengambil instance socket tanpa memblokir dari koneksi berhasil
+  socket = await connectSocket(config.pcId);
 
   await startScheduler(socket, config);
 };

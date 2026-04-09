@@ -1,60 +1,109 @@
+// utils/logger.js
+// Efficient logger with daily rotation and size cap
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const MAX_LOG_LINES = 200;
-const TRIM_EVERY_N_WRITES = 100; // trim tiap 100 log
-let writeCounter = 0;
+// ─── Config ──────────────────────────────
+const LOG_DIR = path.join(os.tmpdir(), "SmartMonitoringAgentLogs");
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB per file
+const MAX_LOG_FILES = 7;               // keep 7 days of logs
+const CHECK_SIZE_EVERY = 500;          // check file size every N writes
 
-function getLogFilePath(name = "agent") {
-  const baseDir = os.tmpdir();
-  const logDir = path.join(baseDir, "SmartMonitoringAgentLogs");
-  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-  return path.join(logDir, `${name}.log`);
+let writeCounter = 0;
+let currentDate = "";
+let currentLogPath = "";
+let writeStream = null;
+
+// ─── Helpers ─────────────────────────────
+function getJakartaTime() {
+  // Return format YYYY-MM-DD HH:mm:ss in WIB
+  return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Jakarta" });
 }
 
-function log(message, name = "agent") {
-  const logFile = getLogFilePath(name);
-  const timestamp = new Date().toISOString();
-  const fullMessage = `[${timestamp}] ${message}\n`;
+// ─── Ensure log dir ─────────────────────
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+}
 
-  // 🚀 Non-blocking append
-  fs.appendFile(logFile, fullMessage, (err) => {
-    if (err) console.error("❌ Logging gagal:", err.message);
-  });
-
-  // 🧩 Trim hanya sesekali
-  writeCounter++;
-  if (writeCounter % TRIM_EVERY_N_WRITES !== 0) return;
-
-  try {
-    const data = fs.readFileSync(logFile, "utf-8");
-    const lines = data.trim().split("\n");
-    if (lines.length > MAX_LOG_LINES) {
-      const trimmed = lines.slice(-MAX_LOG_LINES);
-      fs.writeFileSync(logFile, trimmed.join("\n") + "\n", "utf-8");
-      console.log(`🧹 Trim ${name}.log → ${MAX_LOG_LINES} baris`);
+// ─── Get today's log path ───────────────
+function getLogPath() {
+  const today = getJakartaTime().split(" ")[0]; // YYYY-MM-DD
+  if (today !== currentDate) {
+    currentDate = today;
+    currentLogPath = path.join(LOG_DIR, `agent-${today}.log`);
+    // Close old stream, open new one
+    if (writeStream) {
+      writeStream.end();
     }
-  } catch (err) {
-    console.error("⚠️ Gagal trim log:", err.message);
+    writeStream = fs.createWriteStream(currentLogPath, { flags: "a" });
+    writeStream.on("error", () => { }); // suppress errors
+  }
+  return currentLogPath;
+}
+
+// ─── Main log function ──────────────────
+function log(message, category = "agent") {
+  const timestamp = getJakartaTime();
+  const line = `[${timestamp}] [${category}] ${message}\n`;
+
+  // File output via stream (non-blocking)
+  getLogPath();
+  if (writeStream) {
+    writeStream.write(line);
+  }
+
+  // Periodic maintenance
+  writeCounter++;
+  if (writeCounter % CHECK_SIZE_EVERY === 0) {
+    maintenance();
   }
 }
 
-function startLogTrimmer() {
-  setInterval(() => {
-    const logDir = path.join(os.tmpdir(), "SmartMonitoringAgentLogs");
-    if (!fs.existsSync(logDir)) return;
+// ─── Maintenance: rotate + cleanup ──────
+function maintenance() {
+  try {
+    const logPath = getLogPath();
 
-    fs.readdirSync(logDir).forEach((file) => {
-      const filePath = path.join(logDir, file);
-      const data = fs.readFileSync(filePath, "utf-8");
-      const lines = data.trim().split("\n");
-      if (lines.length > MAX_LOG_LINES) {
-        const trimmed = lines.slice(-MAX_LOG_LINES);
-        fs.writeFileSync(filePath, trimmed.join("\n") + "\n", "utf-8");
+    // 1. Check file size → rotate if too big
+    if (fs.existsSync(logPath)) {
+      const stats = fs.statSync(logPath);
+      if (stats.size > MAX_FILE_SIZE) {
+        // Truncate: keep last half of file
+        const data = fs.readFileSync(logPath, "utf-8");
+        const lines = data.split("\n");
+        const half = Math.floor(lines.length / 2);
+        const trimmed = lines.slice(half).join("\n");
+
+        // Close stream, write truncated, reopen
+        if (writeStream) writeStream.end();
+        fs.writeFileSync(logPath, trimmed, "utf-8");
+        writeStream = fs.createWriteStream(logPath, { flags: "a" });
+        writeStream.on("error", () => { });
       }
-    });
-  }, 5 * 60 * 1000);
+    }
+
+    // 2. Delete old log files (keep MAX_LOG_FILES days)
+    const files = fs.readdirSync(LOG_DIR)
+      .filter((f) => f.startsWith("agent-") && f.endsWith(".log"))
+      .sort();
+
+    if (files.length > MAX_LOG_FILES) {
+      const toDelete = files.slice(0, files.length - MAX_LOG_FILES);
+      toDelete.forEach((f) => {
+        try {
+          fs.unlinkSync(path.join(LOG_DIR, f));
+        } catch (_) { }
+      });
+    }
+  } catch (_) {
+    // Maintenance errors are non-fatal
+  }
+}
+
+// ─── Backwards compat (startLogTrimmer is now a no-op) ──
+function startLogTrimmer() {
+  // No longer needed — maintenance runs inline every N writes
 }
 
 module.exports = { log, startLogTrimmer };

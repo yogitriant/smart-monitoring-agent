@@ -2,7 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const { log } = require("./logger");
 
-let API_BASE_URL = "http://localhost:3000"; // Fallback default
+try {
+  const dotenvPath = typeof process.pkg !== "undefined"
+    ? path.join(path.dirname(process.execPath), ".env")
+    : path.join(process.cwd(), ".env");
+  require("dotenv").config({ path: dotenvPath });
+} catch (e) {
+  // ignore dotenv errors
+}
+
+let API_BASE_URL = process.env.VITE_API_URL || process.env.API_BASE_URL || "http://localhost:3000"; // Fallback default
 
 try {
   const isPkg = typeof process.pkg !== "undefined";

@@ -60,6 +60,6 @@ while ($true) {
         Write-Output 0
         [Console]::Out.Flush()
     }
-    Start-Sleep -Milliseconds 1000
+    Start-Sleep -Milliseconds 3000
 }
 
