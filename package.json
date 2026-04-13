@@ -1,6 +1,6 @@
 {
   "name": "smart-monitoring-agent",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "commonjs",
   "main": "index.js",
   "bin": "index.js",
@@ -20,6 +20,7 @@
       "logs/**/*",
       "scheduler.js",
       "scripts/getIdleTime.ps1",
+      "scripts/getLocation.ps1",
       "services/**/*",
       "utils/**/*",
       "node_modules/axios/dist/node/axios.cjs"

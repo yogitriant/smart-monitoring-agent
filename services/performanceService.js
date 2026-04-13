@@ -3,6 +3,7 @@ const si = require("systeminformation");
 const axios = require("axios");
 const { getIdleTime: getIdleTimeRaw } = require("../utils/getIdleTime");
 const { getUptimeTotalToday } = require("../utils/uptimeHelper");
+const { getLocation } = require("../utils/locationHelper");
 const { log } = require("../utils/logger");
 
 // 🌍 Cache public IP (refresh setiap 1 jam)
@@ -86,8 +87,11 @@ async function collectAndEmit(socket, config) {
     const activeNet = netInterfaces.find(n => n.operstate === "up" && !n.virtual && n.ip4);
     const activeIp = activeNet ? activeNet.ip4 : "127.0.0.1";
 
-    // 🌍 Public IP (untuk Geolocation otomatis)
+    // 🌍 Public IP (untuk Geolocation fallback)
     const publicIp = await getPublicIp();
+
+    // 📍 GPS Presisi (Windows Location API / WiFi triangulation)
+    const gpsLocation = getLocation();
 
     socket.emit("performance", {
       pc: config.pcId,
@@ -98,6 +102,7 @@ async function collectAndEmit(socket, config) {
       battery: batteryInfo,
       activeIp,
       publicIp,
+      gpsLocation,
       idleTime: idleRaw,
       uptime,
       agentUptime,
