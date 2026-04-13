@@ -107,9 +107,11 @@ async function loadOrRegisterPc() {
   const osInfo = await si.osInfo();
   const diskLayout = await si.diskLayout();
 
+  const typeStr = chassis.type?.toLowerCase() || "";
+  const modelStr = system.model?.toLowerCase() || "";
   const isLaptop =
-    chassis.type?.toLowerCase().includes("laptop") ||
-    system.model?.toLowerCase().includes("laptop");
+    typeStr.includes("laptop") || typeStr.includes("notebook") || typeStr.includes("portable") ||
+    modelStr.includes("laptop") || modelStr.includes("notebook");
   const type = isLaptop ? "LT" : "DT";
   
   let isAdmin = false;
