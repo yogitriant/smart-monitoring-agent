@@ -57,7 +57,8 @@ async function emitAtStartup(socket, config) {
 
 function startUptimeService(socket, config, interval = 60) {
   if (intervalId) clearInterval(intervalId);
-  sessionUptime = 0;
+  // Jangan reset sessionUptime ke 0 di sini, agar jika fungsi ini dipanggil
+  // ulang karena update config dari dashboard, uptime session tidak ke-reset.
   lastSessionStart = Date.now();
 
   intervalId = setInterval(async () => {

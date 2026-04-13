@@ -1,6 +1,6 @@
 [Setup]
 AppName=Smart Monitoring Agent
-AppVersion=1.0.2
+AppVersion=1.0.5
 DefaultDirName={pf}\SmartMonitoringAgent
 DefaultGroupName=Smart Monitoring Agent
 OutputDir=dist
