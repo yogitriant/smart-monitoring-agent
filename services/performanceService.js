@@ -91,7 +91,7 @@ async function collectAndEmit(socket, config) {
     const publicIp = await getPublicIp();
 
     // 📍 GPS Presisi (Windows Location API / WiFi triangulation)
-    const gpsLocation = getLocation();
+    const gpsLocation = await getLocation();
 
     socket.emit("performance", {
       pc: config.pcId,
