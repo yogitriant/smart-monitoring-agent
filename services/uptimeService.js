@@ -23,7 +23,20 @@ async function readUptimeData() {
 
 async function writeUptimeData(data) {
   await fs.mkdir(path.dirname(UPTIME_FILE), { recursive: true });
-  await fs.writeFile(UPTIME_FILE, JSON.stringify(data, null, 2));
+  try {
+    await fs.writeFile(UPTIME_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    if (err.code === "EPERM" || err.code === "EACCES") {
+      log(`⚠️ Permission error pada ${UPTIME_FILE}, mencoba hapus dan buat ulang...`, "uptime");
+      try {
+        await fs.unlink(UPTIME_FILE);
+      } catch { /* file mungkin sudah tidak ada */ }
+      await fs.writeFile(UPTIME_FILE, JSON.stringify(data, null, 2));
+      log(`✅ File uptime.json berhasil dibuat ulang`, "uptime");
+    } else {
+      throw err;
+    }
+  }
 }
 
 async function emitUptime(socket, config, session, total) {

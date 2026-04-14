@@ -5,13 +5,7 @@ const path = require("path");
 const { log } = require("./logger");
 
 function getDataPath() {
-  const username = os.userInfo().username.toLowerCase();
-  const isSystem = username.includes("system") || username.includes("service");
-
-  // Target utama → global folder di ProgramData
-  const globalPath = path.join("C:\\ProgramData", "SmartMonitoringAgent", "data");
-
-  // Fallback → user AppData kalau global gak bisa diakses
+  // Target utama → user AppData (tidak butuh permission khusus)
   const localPath = path.join(
     os.homedir(),
     "AppData",
@@ -20,15 +14,18 @@ function getDataPath() {
     "data"
   );
 
+  // Fallback → global ProgramData (kalau AppData gagal, misal SYSTEM account)
+  const globalPath = path.join("C:\\ProgramData", "SmartMonitoringAgent", "data");
+
   try {
-    fs.mkdirSync(globalPath, { recursive: true });
-    fs.accessSync(globalPath, fs.constants.W_OK);
-    log(`📁 Menggunakan path global: ${globalPath}`, "path");
-    return globalPath;
-  } catch (err) {
-    log(`⚠️ Tidak bisa tulis di ProgramData, fallback ke: ${localPath}`, "path");
     fs.mkdirSync(localPath, { recursive: true });
+    fs.accessSync(localPath, fs.constants.W_OK);
+    log(`📁 Menggunakan path lokal: ${localPath}`, "path");
     return localPath;
+  } catch (err) {
+    log(`⚠️ Tidak bisa tulis di AppData, fallback ke: ${globalPath}`, "path");
+    fs.mkdirSync(globalPath, { recursive: true });
+    return globalPath;
   }
 }
 

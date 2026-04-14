@@ -1,11 +1,13 @@
 // utils/logger.js
-// Efficient logger with daily rotation and size cap
+// Reliable logger with daily rotation and size cap
+// Uses appendFileSync for guaranteed writes (even in pkg/exe environment)
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { getDataPath } = require("./pathHelper");
 
 // ─── Config ──────────────────────────────
-const LOG_DIR = path.join(os.tmpdir(), "SmartMonitoringAgentLogs");
+const LOG_DIR = path.join(getDataPath(), "..", "logs");
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB per file
 const MAX_LOG_FILES = 7;               // keep 7 days of logs
 const CHECK_SIZE_EVERY = 500;          // check file size every N writes
@@ -13,7 +15,6 @@ const CHECK_SIZE_EVERY = 500;          // check file size every N writes
 let writeCounter = 0;
 let currentDate = "";
 let currentLogPath = "";
-let writeStream = null;
 
 // ─── Helpers ─────────────────────────────
 function getJakartaTime() {
@@ -22,22 +23,24 @@ function getJakartaTime() {
 }
 
 // ─── Ensure log dir ─────────────────────
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
-}
+try {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+} catch (_) { /* will retry on each log call */ }
 
 // ─── Get today's log path ───────────────
 function getLogPath() {
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+  } catch (_) { }
+
   const today = getJakartaTime().split(" ")[0]; // YYYY-MM-DD
   if (today !== currentDate) {
     currentDate = today;
     currentLogPath = path.join(LOG_DIR, `agent-${today}.log`);
-    // Close old stream, open new one
-    if (writeStream) {
-      writeStream.end();
-    }
-    writeStream = fs.createWriteStream(currentLogPath, { flags: "a" });
-    writeStream.on("error", () => { }); // suppress errors
   }
   return currentLogPath;
 }
@@ -47,10 +50,17 @@ function log(message, category = "agent") {
   const timestamp = getJakartaTime();
   const line = `[${timestamp}] [${category}] ${message}\n`;
 
-  // File output via stream (non-blocking)
-  getLogPath();
-  if (writeStream) {
-    writeStream.write(line);
+  // Synchronous file append — guaranteed write, works in pkg/exe
+  try {
+    const logPath = getLogPath();
+    fs.appendFileSync(logPath, line);
+  } catch (_) {
+    // Last resort: try original temp location
+    try {
+      const fallback = path.join(os.tmpdir(), "SmartMonitoringAgentLogs");
+      if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
+      fs.appendFileSync(path.join(fallback, `agent-${currentDate}.log`), line);
+    } catch (_) { /* truly nothing we can do */ }
   }
 
   // Periodic maintenance
@@ -74,12 +84,7 @@ function maintenance() {
         const lines = data.split("\n");
         const half = Math.floor(lines.length / 2);
         const trimmed = lines.slice(half).join("\n");
-
-        // Close stream, write truncated, reopen
-        if (writeStream) writeStream.end();
         fs.writeFileSync(logPath, trimmed, "utf-8");
-        writeStream = fs.createWriteStream(logPath, { flags: "a" });
-        writeStream.on("error", () => { });
       }
     }
 
