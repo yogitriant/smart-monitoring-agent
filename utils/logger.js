@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { execSync } = require("child_process");
 
 // ─── Config ──────────────────────────────
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB per file
@@ -25,7 +26,9 @@ function resolveLogDir() {
   for (const dir of candidates) {
     try {
       fs.mkdirSync(dir, { recursive: true });
-      // Test actual file write (not just folder access)
+      // Fix Windows ACL so any user/SYSTEM can write log files
+      try { execSync(`icacls "${dir}" /grant Everyone:(OI)(CI)F /Q`, { stdio: "ignore" }); } catch (_) {}
+      // Test actual file write
       const testFile = path.join(dir, ".write-test");
       fs.writeFileSync(testFile, "ok");
       fs.unlinkSync(testFile);
