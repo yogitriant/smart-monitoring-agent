@@ -24,6 +24,7 @@ async function connectSocket(pcId) {
       socket.emit("status", {
         pcId,
         status: "online",
+        version: config.version,
         timestamp: new Date(),
       });
     };
@@ -47,6 +48,22 @@ async function connectSocket(pcId) {
 
     // ⚠️ "agent-config-updated" ditangani di scheduler.js (satu tempat saja)
     // Tidak perlu listener duplikat di sini.
+
+    // 🔄 Auto-healing: Jika PC dihapus dari dashboard, backend akan menyuruh agent re-register
+    socket.on("force-re-register", async () => {
+      log(`⚠️ Backend mendeteksi PC telah dihapus. Memaksa agent registrasi ulang...`, "socket");
+      try {
+        const { saveConfig } = require("./utils/configHandler");
+        const currentConfig = await loadConfig();
+        currentConfig.pcId = null; // Reset pcId
+        saveConfig(currentConfig);
+        
+        // Hentikan proses. Windows Service/PM2 akan otomatis merestart agen
+        process.exit(1);
+      } catch (e) {
+        log(`❌ Gagal mereset config: ${e.message}`, "socket");
+      }
+    });
 
     socket.on("connect", () => {
       log(`🔌 Socket connected: ${socket.id}`, "socket");

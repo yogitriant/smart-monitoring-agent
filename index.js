@@ -34,6 +34,15 @@ const main = async () => {
     config = await loadConfig();
   }
 
+  // 🔹 Selalu timpa versi config dengan versi compiler package.json 
+  // agar setelah update via Installer, versi di Dashboard jg terupdate
+  const pkg = require("./package.json");
+  if (config.version !== pkg.version) {
+    log(`🔄 Sinkronisasi versi config: ${config.version} -> ${pkg.version}`, "init");
+    config.version = pkg.version;
+    saveConfig(config);
+  }
+
   let socket;
   // Mengambil instance socket tanpa memblokir dari koneksi berhasil
   socket = await connectSocket(config.pcId);

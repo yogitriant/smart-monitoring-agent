@@ -29,7 +29,8 @@ archive.pipe(output);
 // 🔹 File utama dari dist (nama jangan diubah!)
 const mainFiles = [
   { src: "dist/smart-monitoring-agent.exe", name: "smart-monitoring-agent.exe" },
-  { src: "dist/watchbee.exe", name: "watchbee.exe" },
+  // watchbee.exe TIDAK dimasukkan ke ZIP OTA — watchbee tetap running saat update
+  // Jika perlu update watchbee, gunakan Installer (Inno Setup) atau PsExec
   { src: "dist/run-silent.vbs", name: "run-silent.vbs" },
   { src: "dist/run-watchbee.vbs", name: "run-watchbee.vbs" },
   // { src: "dist/config.json", name: "config.json" },

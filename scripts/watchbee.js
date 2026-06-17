@@ -32,6 +32,11 @@ const log = (msg) => {
   fs.appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${msg}\n`);
 };
 
+// ⏳ Helper sleep (promise-based)
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // 🔎 Fungsi cek apakah agent hidup
 function isAgentRunning() {
   try {
@@ -44,6 +49,22 @@ function isAgentRunning() {
   }
 }
 
+// 🔪 Fungsi kill agent secara paksa
+function killAgent() {
+  try {
+    if (!fs.existsSync(AGENT_PID_PATH)) return;
+    const pid = parseInt(fs.readFileSync(AGENT_PID_PATH, "utf-8"));
+    try {
+      process.kill(pid, "SIGTERM");
+      log(`🔪 Killed agent process (PID: ${pid})`);
+    } catch {
+      // Process sudah mati, no-op
+    }
+  } catch (err) {
+    log(`⚠️ Error killing agent: ${err.message}`);
+  }
+}
+
 // ▶️ Fungsi start agent (silent)
 function startAgent() {
   exec(VBS_LAUNCHER, { windowsHide: true }, (err) => {
@@ -53,6 +74,32 @@ function startAgent() {
       log("✅ Agent restarted (via VBS)");
     }
   });
+}
+
+// 📁 Fungsi copy file recursive dari src ke dest (skip file tertentu)
+function copyFilesRecursive(srcDir, destDir, skipFiles = []) {
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+
+    if (entry.isDirectory()) {
+      fs.mkdirSync(destPath, { recursive: true });
+      copyFilesRecursive(srcPath, destPath, skipFiles);
+    } else {
+      // Skip file yang tidak boleh di-overwrite (watchbee.exe)
+      if (skipFiles.includes(entry.name.toLowerCase())) {
+        log(`⏭️ Skipped ${entry.name} (excluded from OTA)`);
+        continue;
+      }
+      try {
+        fs.copyFileSync(srcPath, destPath);
+        log(`📁 Copied ${entry.name}`);
+      } catch (err) {
+        log(`⚠️ Failed to copy ${entry.name}: ${err.message}`);
+      }
+    }
+  }
 }
 
 // 🔄 Fungsi backup file lama
@@ -68,7 +115,6 @@ function backupOldFiles(version) {
 
     const filesToBackup = [
       "smart-monitoring-agent.exe",
-      "watchbee.exe",
       "run-silent.vbs",
       "run-watchbee.vbs",
       "config.json",
@@ -86,7 +132,7 @@ function backupOldFiles(version) {
         }
       }
     }
-    
+
     // Simpan lokasi backup agar rollback tahu kemana harus mencari
     fs.writeFileSync(LAST_BACKUP_MARKER, backupDir, "utf-8");
   } catch (err) {
@@ -94,86 +140,80 @@ function backupOldFiles(version) {
   }
 }
 
-// 🔄 Fungsi apply update via eksternal bat
-function applyUpdate() {
+// 🔄 Fungsi apply update — LANGSUNG tanpa external script
+async function applyUpdate() {
   try {
-    if (fs.existsSync(UPDATE_FLAG) && fs.existsSync(TMP_UPDATE_DIR)) {
-      const version = fs.readFileSync(UPDATE_FLAG, "utf-8").trim();
-      log(`🔄 Update detected → applying version ${version}...`);
+    if (!fs.existsSync(UPDATE_FLAG) || !fs.existsSync(TMP_UPDATE_DIR)) return;
 
-      // 🔹 Backup dulu sebelum replace
-      backupOldFiles(version);
+    const version = fs.readFileSync(UPDATE_FLAG, "utf-8").trim();
+    log(`🔄 Update detected → applying version ${version}...`);
 
-      // 🔹 Buat file updater.bat
-      const updaterBat = path.join(os.tmpdir(), "agent_updater.bat");
-      const batContent = `
-@echo off
-echo Waiting for watchbee to exit...
-timeout /t 3 /nobreak >nul
-echo Copying new files...
-xcopy /s /e /y "${TMP_UPDATE_DIR}\\*" "${baseDir}\\"
-echo Cleaning up temp dir...
-rmdir /s /q "${TMP_UPDATE_DIR}"
-del "${UPDATE_FLAG}"
-echo Restarting watchbee...
-wscript.exe "${path.join(baseDir, "run-watchbee.vbs")}"
-del "%~f0"
-`;
-      fs.writeFileSync(updaterBat, batContent, "utf-8");
+    // 1. Kill agent dulu agar file tidak di-lock
+    killAgent();
 
-      log("🚀 Starting external updater.bat and exiting Watchbee to release lock...");
-      
-      const { spawn } = require("child_process");
-      const child = spawn("cmd.exe", ["/c", updaterBat], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      child.unref();
+    // 2. Tunggu file lock release
+    await sleep(2000);
 
-      process.exit(0);
+    // 3. Backup file lama
+    backupOldFiles(version);
+
+    // 4. Copy file dari tmp_update ke baseDir (SKIP watchbee.exe)
+    copyFilesRecursive(TMP_UPDATE_DIR, baseDir, ["watchbee.exe"]);
+
+    // 5. Cleanup: hapus folder tmp_update dan flag
+    try {
+      fs.rmSync(TMP_UPDATE_DIR, { recursive: true, force: true });
+      log("🗑️ Cleaned up tmp_update folder");
+    } catch (err) {
+      log(`⚠️ Cleanup tmp_update error: ${err.message}`);
     }
+
+    try {
+      fs.unlinkSync(UPDATE_FLAG);
+      log("🗑️ Removed update.flag");
+    } catch (err) {
+      log(`⚠️ Cleanup update.flag error: ${err.message}`);
+    }
+
+    // 6. Start agent kembali
+    log(`✅ Update ${version} applied! Starting agent...`);
+    startAgent();
   } catch (err) {
     log("❌ Error applying update: " + err.message);
   }
 }
 
-// ⏪ Fungsi Rollback jika Crash Loop
-function doRollback() {
+// ⏪ Fungsi Rollback jika Crash Loop — LANGSUNG tanpa external script
+async function doRollback() {
   try {
-    if (fs.existsSync(LAST_BACKUP_MARKER)) {
-      const backupDir = fs.readFileSync(LAST_BACKUP_MARKER, "utf-8").trim();
-      log(`⏪ Rollback initiated from: ${backupDir}`);
-      if (fs.existsSync(backupDir)) {
-        const rollbackBat = path.join(os.tmpdir(), "agent_rollback.bat");
-        const batContent = `
-@echo off
-echo Waiting for watchbee to exit...
-timeout /t 3 /nobreak >nul
-echo Restoring old files...
-xcopy /s /e /y "${backupDir}\\*" "${baseDir}\\"
-echo Cleaning up marker...
-del "${LAST_BACKUP_MARKER}"
-echo Restarting watchbee...
-wscript.exe "${path.join(baseDir, "run-watchbee.vbs")}"
-del "%~f0"
-`;
-        fs.writeFileSync(rollbackBat, batContent, "utf-8");
-
-        const { spawn } = require("child_process");
-        const child = spawn("cmd.exe", ["/c", rollbackBat], {
-          detached: true,
-          stdio: "ignore",
-          windowsHide: true,
-        });
-        child.unref();
-
-        log("⏪ Starting external agent_rollback.bat and exiting Watchbee...");
-        process.exit(0);
-      }
-    } else {
+    if (!fs.existsSync(LAST_BACKUP_MARKER)) {
       log("❌ Rollback failed: LAST_BACKUP_MARKER not found.");
+      return;
     }
+
+    const backupDir = fs.readFileSync(LAST_BACKUP_MARKER, "utf-8").trim();
+    log(`⏪ Rollback initiated from: ${backupDir}`);
+
+    if (!fs.existsSync(backupDir)) {
+      log("❌ Rollback failed: backup directory not found.");
+      return;
+    }
+
+    // 1. Kill agent
+    killAgent();
+    await sleep(2000);
+
+    // 2. Copy file backup kembali ke baseDir
+    copyFilesRecursive(backupDir, baseDir, ["watchbee.exe"]);
+
+    // 3. Hapus marker
+    try {
+      fs.unlinkSync(LAST_BACKUP_MARKER);
+    } catch { }
+
+    // 4. Start agent
+    log("⏪ Rollback complete! Starting agent...");
+    startAgent();
   } catch (err) {
     log("❌ Error rolling back: " + err.message);
   }
@@ -182,24 +222,34 @@ del "%~f0"
 // 🟢 Log awal saat watchbee dijalankan
 log("🔄 Watchbee started...");
 
-// 🔁 Loop pengecekan agent hidup/mati
-setInterval(() => {
-  if (!isAgentRunning()) {
-    // Cek apakah ini karena update
-    applyUpdate();
+// 🔁 Main loop — async agar bisa await sleep di applyUpdate
+(async function mainLoop() {
+  while (true) {
+    if (!isAgentRunning()) {
+      // Cek apakah ini karena update
+      await applyUpdate();
 
-    // Cek crash loop
-    const now = Date.now();
-    restartTimestamps.push(now);
-    restartTimestamps = restartTimestamps.filter(t => (now - t) < TIME_WINDOW_MS);
-    
-    if (restartTimestamps.length >= MAX_CRASHES) {
-      log("🔥 Crash loop detected! Attempting rollback...");
-      doRollback();
-      return; // Stop eksekusi dan biarkan doRollback mematikan proses ini
+      // Beri waktu agent untuk start dan tulis PID file
+      await sleep(3000);
+
+      // Kalau agent masih mati setelah applyUpdate (bukan karena update),
+      // cek crash loop lalu restart
+      if (!isAgentRunning()) {
+        const now = Date.now();
+        restartTimestamps.push(now);
+        restartTimestamps = restartTimestamps.filter(
+          (t) => now - t < TIME_WINDOW_MS
+        );
+
+        if (restartTimestamps.length >= MAX_CRASHES) {
+          log("🔥 Crash loop detected! Attempting rollback...");
+          await doRollback();
+        } else {
+          log("💀 Agent not running. Restarting...");
+          startAgent();
+        }
+      }
     }
-
-    log("💀 Agent not running. Restarting...");
-    startAgent();
+    await sleep(INTERVAL_MS);
   }
-}, INTERVAL_MS);
+})();

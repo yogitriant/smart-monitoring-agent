@@ -16,6 +16,13 @@ async function handleAgentUpdate(data, socket) {
 
   if (version === currentVersion && !force) {
     log(`⚠️ Skip update: version ${version} is already current.`, "update");
+    socket.emit("agent-update-result", {
+      pcId,
+      version,
+      status: "success",
+      message: `Update di-skip: Agen sudah berada di versi ${version}.`,
+      action: data.action || "update"
+    });
     return;
   }
 

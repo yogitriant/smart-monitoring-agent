@@ -1,6 +1,6 @@
 [Setup]
 AppName=Smart Monitoring Agent
-AppVersion=1.0.6
+AppVersion=2.0.1
 DefaultDirName={pf}\SmartMonitoringAgent
 DefaultGroupName=Smart Monitoring Agent
 OutputDir=dist
@@ -13,7 +13,7 @@ Source: "dist\smart-monitoring-agent.exe"; DestDir: "{app}"; Flags: ignoreversio
 Source: "dist\watchbee.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\run-silent.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\run-watchbee.vbs"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\config.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "scripts\getIdleTime.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Icons]
