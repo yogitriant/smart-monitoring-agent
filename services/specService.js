@@ -78,6 +78,22 @@ const parseGbNumber = (v) => {
 
 const bytesToGB = (bytes) => Math.round(bytes / 1024 / 1024 / 1024);
 
+// Pembulatan memori ke standar modul RAM pasaran
+const RAM_TIERS = [2, 4, 6, 8, 12, 16, 20, 24, 32, 48, 64, 96, 128, 256, 512];
+function normalizeRam(gb) {
+  if (gb <= 0) return 0;
+  let closest = RAM_TIERS[0];
+  let minDiff = Math.abs(gb - RAM_TIERS[0]);
+  for (const t of RAM_TIERS) {
+    const diff = Math.abs(gb - t);
+    if (diff < minDiff) {
+      closest = t;
+      minDiff = diff;
+    }
+  }
+  return closest;
+}
+
 // normalisasi array disk → map by drive letter, dan angka GB murni
 function normalizeDisks(disks = []) {
   // pastikan deterministik
@@ -210,7 +226,7 @@ async function collectSpec() {
     brand: baseboard.manufacturer || "-",
     model: baseboard.model || "-",
     cpu: `${cpu.manufacturer} ${cpu.brand}`.trim(),
-    ram: `${Math.round(mem.total / 1024 / 1024 / 1024)} GB`,
+    ram: `${normalizeRam(mem.total / 1024 / 1024 / 1024)} GB`,
     os: `${os.distro} ${os.arch}`.trim(),
     gpu: (gpu.controllers || []).map((g) => g.model).filter(Boolean).join(", "),
     macAddress: nic.mac || "-",
